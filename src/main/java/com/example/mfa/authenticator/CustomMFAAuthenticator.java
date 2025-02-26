@@ -1,98 +1,130 @@
 package com.example.mfa.authenticator;
 
+import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.KeycloakContext;
-import org.keycloak.models.credential.OTPCredentialModel;
-import org.keycloak.models.credential.OTPCredentialModel;
-import org.keycloak.credential.CredentialProvider;
-import org.keycloak.credential.OTPCredentialProvider;
-import org.keycloak.models.UserCredentialModel;
-import org.keycloak.email.EmailException;
-import org.keycloak.email.EmailTemplateProvider;
-import org.jboss.logging.Logger;
 import com.example.mfa.config.MFAConfig;
-import com.example.mfa.service.TwilioService;
-import com.example.mfa.service.TelegramService;
+import com.example.mfa.event.AuthEvent;
+import com.example.mfa.event.AuthEventManager;
+import com.example.mfa.factory.MFAProviderFactory;
+import com.example.mfa.provider.MFAException;
+import com.example.mfa.provider.MFAProvider;
 import jakarta.ws.rs.core.MultivaluedMap;
-import org.apache.commons.collections4.MultiValuedMap;
-import java.security.SecureRandom;
-import org.keycloak.credential.CredentialInput;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.List;
 
+/**
+ * Main authenticator class refactored to use multiple design patterns:
+ * - Strategy Pattern: Delegates to different MFA providers
+ * - Factory Pattern: Uses factory to create providers
+ * - Observer Pattern: Fires events during authentication
+ * - Template Method Pattern: Defines authentication flow
+ */
 public class CustomMFAAuthenticator implements Authenticator {
     private static final Logger logger = Logger.getLogger(CustomMFAAuthenticator.class);
+    
+    // Templates
     private static final String TEMPLATE_SELECT = "mfa-select.ftl";
     private static final String TEMPLATE_CONFIG = "mfa-config.ftl";
     private static final String TEMPLATE_CODE = "mfa-code.ftl";
-
+    
+    // Auth states
+    private static final String AUTH_STATE = "auth_state";
+    private static final String STATE_METHOD_SELECT = "METHOD_SELECT";
+    private static final String STATE_METHOD_CONFIG = "METHOD_CONFIG";
+    private static final String STATE_CODE_VALIDATION = "CODE_VALIDATION";
+    
+    // Session notes
+    private static final String NOTE_CHOSEN_METHOD = "chosen_method";
+    
+    private final MFAProviderFactory providerFactory;
+    private final AuthEventManager eventManager;
+    
+    public CustomMFAAuthenticator() {
+        this.providerFactory = MFAProviderFactory.getInstance();
+        this.eventManager = AuthEventManager.getInstance();
+    }
+    
     @Override
-public void authenticate(AuthenticationFlowContext context) {
-    UserModel user = context.getUser();
-    if (user == null) {
-        context.failure(AuthenticationFlowError.UNKNOWN_USER);
-        return;
-    }
+    public void authenticate(AuthenticationFlowContext context) {
+        UserModel user = context.getUser();
+        if (user == null) {
+            context.failure(AuthenticationFlowError.UNKNOWN_USER);
+            return;
+        }
 
-    String state = context.getAuthenticationSession().getAuthNote("auth_state");
-    if (state == null) {
-        showMethodSelection(context, user);
-        return;
-    }
-
-    switch (state) {
-        case "METHOD_CONFIG":
-            showMethodConfiguration(context, user);
-            break;
-        case "CODE_VALIDATION":
-            String method = context.getAuthenticationSession().getAuthNote("chosen_method");
-            if ("totp".equals(method)) {
-                // Check TOTP configuration before proceeding
-                OTPCredentialProvider otpProvider = (OTPCredentialProvider) context.getSession()
-                    .getProvider(CredentialProvider.class, "keycloak-otp");
-                
-                if (!otpProvider.isConfiguredFor(context.getRealm(), user)) {
-                    logger.warn("User attempted TOTP but it's not configured: " + user.getUsername());
-                    context.form().setError("totpNotConfigured");
-                    showMethodSelection(context, user);
-                    return;
-                }
-            }
-            sendOTPCode(context, user);
-            break;
-        default:
+        String state = context.getAuthenticationSession().getAuthNote(AUTH_STATE);
+        if (state == null) {
             showMethodSelection(context, user);
-            break;
+            return;
+        }
+
+        switch (state) {
+            case STATE_METHOD_CONFIG:
+                showMethodConfiguration(context, user);
+                break;
+            case STATE_CODE_VALIDATION:
+                String method = context.getAuthenticationSession().getAuthNote(NOTE_CHOSEN_METHOD);
+                try {
+                    MFAProvider provider = providerFactory.createProvider(method, context.getAuthenticatorConfig());
+                    
+                    if (!provider.isConfiguredFor(user)) {
+                        logger.warn("User attempted to use MFA method that's not configured: " + user.getUsername());
+                        context.form().setError("configError", "MFA method not properly configured");
+                        showMethodSelection(context, user);
+                        return;
+                    }
+                    
+                    // Fire event
+                    fireVerificationStartedEvent(context, user, method);
+                    
+                    // Send verification code
+                    provider.sendVerificationCode(context, user);
+                    context.challenge(context.form().createForm(TEMPLATE_CODE));
+                } catch (MFAException e) {
+                    logger.error("Error sending verification code", e);
+                    context.form().setError("sendError", "Failed to send verification code");
+                    showMethodSelection(context, user);
+                }
+                break;
+            default:
+                showMethodSelection(context, user);
+                break;
+        }
     }
-}
 
     private void showMethodSelection(AuthenticationFlowContext context, UserModel user) {
-    context.getAuthenticationSession().setAuthNote("auth_state", "METHOD_SELECT");
+        context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_METHOD_SELECT);
+        
+        // Check which methods are configured
+        boolean smsConfigured = isMethodConfigured(user, "sms");
+        boolean telegramConfigured = isMethodConfigured(user, "telegram");
+        boolean emailConfigured = isMethodConfigured(user, "email");
+        boolean totpConfigured = isMethodConfigured(user, "totp");
+        
+        context.form()
+            .setAttribute("sms_configured", smsConfigured)
+            .setAttribute("telegram_configured", telegramConfigured)
+            .setAttribute("email_configured", emailConfigured)
+            .setAttribute("totp_configured", totpConfigured);
+        
+        context.challenge(context.form().createForm(TEMPLATE_SELECT));
+    }
     
-    // Get OTP credential provider from session
-    OTPCredentialProvider otpProvider = (OTPCredentialProvider) context.getSession()
-        .getProvider(CredentialProvider.class, "keycloak-otp");
-    
-    // Check if TOTP is configured using the provider
-    boolean isTotpConfigured = otpProvider.isConfiguredFor(context.getRealm(), user);
-    
-    context.form()
-        .setAttribute("sms_configured", user.getFirstAttribute("phoneNumber") != null)
-        .setAttribute("telegram_configured", user.getFirstAttribute("telegramId") != null)
-        .setAttribute("email_configured", user.getEmail() != null && !user.getEmail().isEmpty())
-        .setAttribute("totp_configured", isTotpConfigured);
-    
-    context.challenge(context.form().createForm(TEMPLATE_SELECT));
-}
+    private boolean isMethodConfigured(UserModel user, String method) {
+        try {
+            MFAProvider provider = providerFactory.createProvider(method, null);
+            return provider.isConfiguredFor(user);
+        } catch (Exception e) {
+            logger.warn("Error checking if " + method + " is configured", e);
+            return false;
+        }
+    }
 
     private void showMethodConfiguration(AuthenticationFlowContext context, UserModel user) {
-        String method = context.getAuthenticationSession().getAuthNote("chosen_method");
+        String method = context.getAuthenticationSession().getAuthNote(NOTE_CHOSEN_METHOD);
         if (method == null) {
             showMethodSelection(context, user);
             return;
@@ -102,72 +134,10 @@ public void authenticate(AuthenticationFlowContext context) {
         context.challenge(context.form().createForm(TEMPLATE_CONFIG));
     }
 
-    // Replace the email sending code in sendOTPCode method (around line 147)
-private void sendOTPCode(AuthenticationFlowContext context, UserModel user) {
-    String method = context.getAuthenticationSession().getAuthNote("chosen_method");
-    
-    if ("totp".equals(method)) {
-        context.challenge(context.form().createForm(TEMPLATE_CODE));
-        logger.info("TOTP validation prepared for user: " + user.getUsername());
-        return;
-    }
-
-    String otp = generateOTP();
-    context.getAuthenticationSession().setAuthNote("otp_code", otp);
-
-    try {
-        switch (method) {
-            case "sms":
-                MFAConfig mfaConfig = new MFAConfig(context.getAuthenticatorConfig());
-                TwilioService twilioService = new TwilioService(mfaConfig);
-                String phoneNumber = user.getFirstAttribute("phoneNumber");
-                twilioService.sendVerificationCode(phoneNumber);
-                break;
-            case "telegram":
-                MFAConfig telegramConfig = new MFAConfig(context.getAuthenticatorConfig());
-                TelegramService telegramService = new TelegramService(telegramConfig);
-                String telegramId = user.getFirstAttribute("telegramId");
-                telegramService.sendOTP(telegramId, otp);
-                break;
-            case "email":
-                String email = user.getEmail();
-                if (email == null || email.isEmpty()) {
-                    throw new EmailException("Email not configured");
-                }
-                
-                // Create email content
-                Map<String, Object> attributes = new HashMap<>();
-                attributes.put("code", otp);
-                attributes.put("realmName", context.getRealm().getName());
-                attributes.put("username", user.getUsername());
-                
-                List<Object> subjectParams = List.of(context.getAuthenticatorConfig().getConfig().getOrDefault("otpEmailSubject", "Your authentication code"));
-                
-                // Get email template provider from session
-                EmailTemplateProvider emailProvider = context.getSession().getProvider(EmailTemplateProvider.class);
-                if (emailProvider == null) {
-                    logger.error("Email template provider not found");
-                    throw new EmailException("Email provider not available");
-                }
-                
-                // Use the correct send method signature
-                emailProvider.setRealm(context.getRealm())
-                             .setUser(user)
-                             .send("Authentication Code", subjectParams, "mfa-otp.ftl", attributes);
-                break;
-        }
-        context.challenge(context.form().createForm(TEMPLATE_CODE));
-    } catch (Exception e) {
-        logger.error("Failed to send verification code", e);
-        context.form().setError("sendError", "Failed to send verification code");
-        showMethodSelection(context, user);
-    }
-}
-
     @Override
     public void action(AuthenticationFlowContext context) {
         UserModel user = context.getUser();
-        String state = context.getAuthenticationSession().getAuthNote("auth_state");
+        String state = context.getAuthenticationSession().getAuthNote(AUTH_STATE);
         
         if (state == null || user == null) {
             context.failure(AuthenticationFlowError.INTERNAL_ERROR);
@@ -177,13 +147,13 @@ private void sendOTPCode(AuthenticationFlowContext context, UserModel user) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
 
         switch (state) {
-            case "METHOD_SELECT":
+            case STATE_METHOD_SELECT:
                 handleMethodSelection(context, user, formData);
                 break;
-            case "METHOD_CONFIG":
+            case STATE_METHOD_CONFIG:
                 handleMethodConfiguration(context, user, formData);
                 break;
-            case "CODE_VALIDATION":
+            case STATE_CODE_VALIDATION:
                 handleCodeValidation(context, user, formData);
                 break;
             default:
@@ -199,296 +169,185 @@ private void sendOTPCode(AuthenticationFlowContext context, UserModel user) {
             return;
         }
 
-        if ("totp".equals(method)) {
-            boolean isTotpConfigured = user.credentialManager().isConfiguredFor(OTPCredentialModel.TYPE);
-            if (!isTotpConfigured) {
-                user.addRequiredAction(UserModel.RequiredAction.CONFIGURE_TOTP);
-                context.success();
-                return;
+        try {
+            MFAProvider provider = providerFactory.createProvider(method, context.getAuthenticatorConfig());
+            context.getAuthenticationSession().setAuthNote(NOTE_CHOSEN_METHOD, method);
+            
+            if (provider.isConfiguredFor(user)) {
+                context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_CODE_VALIDATION);
+                
+                // Fire event
+                fireVerificationStartedEvent(context, user, method);
+                
+                provider.sendVerificationCode(context, user);
+                context.challenge(context.form().createForm(TEMPLATE_CODE));
+            } else {
+                context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_METHOD_CONFIG);
+                showMethodConfiguration(context, user);
             }
-        }
-
-        context.getAuthenticationSession().setAuthNote("chosen_method", method);
-        context.form().setAttribute("method", method);
-        boolean isConfigured = false;
-
-        switch (method) {
-            case "sms":
-                isConfigured = user.getFirstAttribute("phoneNumber") != null;
-                break;
-            case "telegram":
-                isConfigured = user.getFirstAttribute("telegramId") != null;
-                break;
-            case "email":
-                isConfigured = user.getEmail() != null && !user.getEmail().isEmpty();
-                break;
-            case "totp":
-                isConfigured = true;
-                break;
-        }
-
-        if (isConfigured) {
-            context.getAuthenticationSession().setAuthNote("auth_state", "CODE_VALIDATION");
-            sendOTPCode(context, user);
-        } else {
-            context.getAuthenticationSession().setAuthNote("auth_state", "METHOD_CONFIG");
-            showMethodConfiguration(context, user);
+        } catch (Exception e) {
+            logger.error("Error during method selection", e);
+            context.form().setError("configError", "Error configuring MFA method");
+            showMethodSelection(context, user);
         }
     }
 
     private void handleMethodConfiguration(AuthenticationFlowContext context, UserModel user, 
                                          MultivaluedMap<String, String> formData) {
-        String method = context.getAuthenticationSession().getAuthNote("chosen_method");
-        boolean configSuccess = false;
-
-        switch (method) {
-            case "sms":
-                String phoneNumber = formData.getFirst("phoneNumber");
-                if (isValidPhoneNumber(phoneNumber)) {
-                    user.setSingleAttribute("phoneNumber", phoneNumber);
-                    configSuccess = true;
-                }
-                break;
-            case "telegram":
-                String telegramId = formData.getFirst("telegramId");
-                if (isValidTelegramId(telegramId)) {
-                    user.setSingleAttribute("telegramId", telegramId);
-                    configSuccess = true;
-                }
-                break;
-            case "email":
-                String email = formData.getFirst("email");
-                if (isValidEmail(email)) {
-                    user.setEmail(email);
-                    configSuccess = true;
-                }
-                break;
-        }
-
-        if (configSuccess) {
-            context.getAuthenticationSession().setAuthNote("auth_state", "CODE_VALIDATION");
-            sendOTPCode(context, user);
-        } else {
-            context.form().setError("configurationError");
-            showMethodConfiguration(context, user);
-        }
-    }
-
-    private boolean validateTOTP(AuthenticationFlowContext context, UserModel user, String enteredCode) {
-    logger.info("Starting TOTP validation for user: " + user.getUsername());
-    logger.info("Entered code: " + (enteredCode != null ? "Length=" + enteredCode.length() : "null"));
-    
-    try {
-        // Get OTP credential provider from session like ValidateOTP does
-        OTPCredentialProvider otpCredProvider = (OTPCredentialProvider) context.getSession()
-            .getProvider(CredentialProvider.class, "keycloak-otp");
-        
-        // Check if user has OTP configured
-        if (!otpCredProvider.isConfiguredFor(context.getRealm(), user)) {
-            logger.warn("User does not have OTP configured: " + user.getUsername());
-            return false;
-        }
-        
-        // Get the default credential ID for this user
-        String credentialId = otpCredProvider
-            .getDefaultCredential(context.getSession(), context.getRealm(), user)
-            .getId();
-        
-        // Validate the OTP using the credential provider directly
-        boolean valid = otpCredProvider.isValid(
-            context.getRealm(), 
-            user, 
-            new UserCredentialModel(credentialId, OTPCredentialModel.TYPE, enteredCode)
-        );
-        
-        logger.info("TOTP validation result for " + user.getUsername() + ": " + valid);
-        return valid;
-    } catch (Exception e) {
-        logger.error("TOTP validation error for " + user.getUsername(), e);
-        e.printStackTrace();
-        return false;
-    }
-}
-
-    private void handleCodeValidation(AuthenticationFlowContext context, UserModel user, 
-                                MultivaluedMap<String, String> formData) {
-    String enteredCode = formData.getFirst("code");
-    if (enteredCode == null || enteredCode.trim().isEmpty()) {
-        context.form().setError("invalidCode");
-        context.challenge(context.form().createForm(TEMPLATE_CODE));
-        return;
-    }
-
-    String method = context.getAuthenticationSession().getAuthNote("chosen_method");
-    boolean isValid = false;
-
-    if ("totp".equals(method)) {
-        logger.info("TOTP validation requested for user: " + user.getUsername());
-        
-        // Get OTP credential provider from session
-        OTPCredentialProvider otpProvider = (OTPCredentialProvider) context.getSession()
-            .getProvider(CredentialProvider.class, "keycloak-otp");
-        
-        // Check if user has OTP configured
-        if (!otpProvider.isConfiguredFor(context.getRealm(), user)) {
-            logger.warn("User does not have TOTP configured: " + user.getUsername());
-            context.form().setError("totpNotConfigured", "TOTP not configured for this user");
-            context.challenge(context.form().createForm(TEMPLATE_CODE));
+        String method = context.getAuthenticationSession().getAuthNote(NOTE_CHOSEN_METHOD);
+        if (method == null) {
+            showMethodSelection(context, user);
             return;
         }
         
         try {
-            // Get default credential ID 
-            String credentialId = otpProvider
-                .getDefaultCredential(context.getSession(), context.getRealm(), user)
-                .getId();
+            MFAProvider provider = providerFactory.createProvider(method, context.getAuthenticatorConfig());
             
-            // Validate using the credential provider directly
-            isValid = otpProvider.isValid(
-                context.getRealm(), 
-                user, 
-                new UserCredentialModel(credentialId, OTPCredentialModel.TYPE, enteredCode)
-            );
+            // Get the appropriate config value from form data based on method
+            String configValue = null;
+            switch (method) {
+                case "sms":
+                    configValue = formData.getFirst("phoneNumber");
+                    break;
+                case "telegram":
+                    configValue = formData.getFirst("telegramId");
+                    break;
+                case "email":
+                    configValue = formData.getFirst("email");
+                    break;
+                case "totp":
+                    // TOTP config is handled by Keycloak's built-in flow
+                    configValue = "";
+                    break;
+            }
             
-            logger.info("TOTP validation result for " + user.getUsername() + ": " + isValid);
+            if (configValue == null) {
+                context.form().setError("configError", "Missing configuration value");
+                showMethodConfiguration(context, user);
+                return;
+            }
+            
+            boolean configured = provider.configure(context, user, configValue);
+            
+            if (configured) {
+                // Fire event
+                fireSetupCompletedEvent(context, user, method);
+                
+                context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_CODE_VALIDATION);
+                provider.sendVerificationCode(context, user);
+                context.challenge(context.form().createForm(TEMPLATE_CODE));
+            } else {
+                context.form().setError("configError", "Invalid configuration value");
+                showMethodConfiguration(context, user);
+            }
         } catch (Exception e) {
-            logger.error("Error during TOTP validation", e);
-            isValid = false;
-        }
-    } else if ("sms".equals(method)) {
-        // Existing SMS validation code
-        MFAConfig mfaConfig = new MFAConfig(context.getAuthenticatorConfig());
-        TwilioService twilioService = new TwilioService(mfaConfig);
-        String phoneNumber = user.getFirstAttribute("phoneNumber");
-        isValid = twilioService.verifyCode(phoneNumber, enteredCode);
-    } else if ("telegram".equals(method)) {
-        String storedCode = context.getAuthenticationSession().getAuthNote("otp_code");
-        isValid = storedCode != null && storedCode.equals(enteredCode);
-    } else if ("email".equals(method)) {
-        String storedCode = context.getAuthenticationSession().getAuthNote("otp_code");
-        isValid = storedCode != null && storedCode.equals(enteredCode);
-    }
-
-    if (isValid) {
-        context.success();
-    } else {
-        context.form().setError("invalidCode");
-        context.challenge(context.form().createForm(TEMPLATE_CODE));
-    }
-}
-
-private void handleEmailConfiguration(AuthenticationFlowContext context, UserModel user, 
-                                    MultivaluedMap<String, String> formData) {
-    String email = formData.getFirst("email");
-    if (!isValidEmail(email)) {
-        context.form().setError("invalidEmail");
-        showMethodConfiguration(context, user);
-        return;
-    }
-
-    // Check if email verification is required
-    boolean requireVerification = Boolean.parseBoolean(
-        context.getAuthenticatorConfig().getConfig().getOrDefault("emailVerificationRequired", "true")
-    );
-
-    if (requireVerification) {
-        // Store the email temporarily
-        context.getAuthenticationSession().setAuthNote("pending_email", email);
-        
-        try {
-            String verificationCode = generateOTP();
-            context.getAuthenticationSession().setAuthNote("email_verification_code", verificationCode);
-            
-            // Create template attributes
-            Map<String, Object> attributes = new HashMap<>();
-            attributes.put("code", verificationCode);
-            attributes.put("realmName", context.getRealm().getName());
-            attributes.put("username", user.getUsername());
-            List<Object> subjectParams = List.of(context.getAuthenticatorConfig().getConfig().getOrDefault("otpEmailSubject", "Your authentication code"));
-            // Send verification email
-            EmailTemplateProvider emailProvider = context.getSession().getProvider(EmailTemplateProvider.class);
-            emailProvider.setRealm(context.getRealm())
-                        .setUser(user)
-                        .setAttribute("code", verificationCode)
-                        .send("Email Verification Required", subjectParams, "mfa-verify.ftl" ,attributes);
-
-            // Show verification code input form
-            context.getAuthenticationSession().setAuthNote("auth_state", "EMAIL_VERIFICATION");
-            context.form()
-                .setAttribute("email", email)
-                .createForm("mfa-verify.ftl");
-        } catch (EmailException e) {
-            logger.error("Failed to send verification email", e);
-            context.form().setError("emailSendError");
+            logger.error("Error during method configuration", e);
+            context.form().setError("configError", "Error configuring MFA method");
             showMethodConfiguration(context, user);
         }
-    } else {
-        // If no verification required, set email directly
-        user.setEmail(email);
-        user.setEmailVerified(false);
-        proceedWithOTP(context, user);
     }
-}
 
-// Replace the sendEmailOTP method (around line 430)
-private void sendEmailOTP(AuthenticationFlowContext context, UserModel user) {
-    String otp = generateOTP();
-    context.getAuthenticationSession().setAuthNote("otp_code", otp);
-
-    try {
-        String email = user.getEmail();
-        if (email == null || email.isEmpty()) {
-            throw new EmailException("Email not configured");
+    private void handleCodeValidation(AuthenticationFlowContext context, UserModel user, 
+                                   MultivaluedMap<String, String> formData) {
+        String enteredCode = formData.getFirst("code");
+        if (enteredCode == null || enteredCode.trim().isEmpty()) {
+            context.form().setError("invalidCode", "Invalid verification code");
+            context.challenge(context.form().createForm(TEMPLATE_CODE));
+            return;
         }
 
-        List<Object> subjectParams = List.of(context.getAuthenticatorConfig().getConfig().getOrDefault("otpEmailSubject", "Your authentication code"));
-        // Create email content
-        Map<String, Object> attributes = new HashMap<>();
-        attributes.put("code", otp);
-        attributes.put("realmName", context.getRealm().getName());
-        attributes.put("username", user.getUsername());
+        String method = context.getAuthenticationSession().getAuthNote(NOTE_CHOSEN_METHOD);
         
-        // Get email template provider from session
-        EmailTemplateProvider emailProvider = context.getSession().getProvider(EmailTemplateProvider.class);
-        if (emailProvider == null) {
-            logger.error("Email template provider not found");
-            throw new EmailException("Email provider not available");
+        try {
+            MFAProvider provider = providerFactory.createProvider(method, context.getAuthenticatorConfig());
+            boolean isValid = provider.verifyCode(context, user, enteredCode);
+
+            if (isValid) {
+                // Fire event
+                fireVerificationSucceededEvent(context, user, method);
+                
+                context.success();
+            } else {
+                // Fire event
+                fireVerificationFailedEvent(context, user, method, "Invalid code");
+                
+                context.form().setError("invalidCode", "Invalid verification code");
+                context.challenge(context.form().createForm(TEMPLATE_CODE));
+            }
+        } catch (Exception e) {
+            logger.error("Error during code validation", e);
+            context.form().setError("validationError", "Error validating code");
+            context.challenge(context.form().createForm(TEMPLATE_CODE));
         }
+    }
+    
+    // Event firing methods
+    private void fireSetupStartedEvent(AuthenticationFlowContext context, UserModel user, String method) {
+        AuthEvent event = new AuthEvent.Builder()
+            .type(AuthEvent.EventType.MFA_SETUP_STARTED)
+            .mfaMethod(method)
+            .user(user)
+            .context(context)
+            .build();
         
-        // Use the correct send method signature
-        emailProvider.setRealm(context.getRealm())
-                    .setUser(user)
-                    .setAttribute("code", otp)
-                    .send("Authentication Code", subjectParams, "mfa-otp.ftl", attributes);
-
-        context.challenge(context.form().createForm("mfa-code.ftl"));
-    } catch (EmailException e) {
-        logger.error("Failed to send OTP email", e);
-        context.form().setError("emailSendError");
-        showMethodSelection(context, user);
+        eventManager.fireEvent(event);
     }
-}
-
-private void proceedWithOTP(AuthenticationFlowContext context, UserModel user) {
-    context.getAuthenticationSession().setAuthNote("auth_state", "CODE_VALIDATION");
-    sendEmailOTP(context, user);
-}
-
-
-    private String generateOTP() {
-        return String.format("%06d", new SecureRandom().nextInt(1000000));
+    
+    private void fireSetupCompletedEvent(AuthenticationFlowContext context, UserModel user, String method) {
+        AuthEvent event = new AuthEvent.Builder()
+            .type(AuthEvent.EventType.MFA_SETUP_COMPLETED)
+            .mfaMethod(method)
+            .user(user)
+            .context(context)
+            .build();
+        
+        eventManager.fireEvent(event);
     }
-
-    private boolean isValidTelegramId(String telegramId) {
-        return telegramId != null && telegramId.matches("^-?\\d+$");
+    
+    private void fireSetupFailedEvent(AuthenticationFlowContext context, UserModel user, String method, String reason) {
+        AuthEvent event = new AuthEvent.Builder()
+            .type(AuthEvent.EventType.MFA_SETUP_FAILED)
+            .mfaMethod(method)
+            .user(user)
+            .context(context)
+            .details(reason)
+            .build();
+        
+        eventManager.fireEvent(event);
     }
-
-    private boolean isValidPhoneNumber(String phoneNumber) {
-        return phoneNumber != null && phoneNumber.matches("\\+[0-9]{10,15}");
+    
+    private void fireVerificationStartedEvent(AuthenticationFlowContext context, UserModel user, String method) {
+        AuthEvent event = new AuthEvent.Builder()
+            .type(AuthEvent.EventType.MFA_VERIFICATION_STARTED)
+            .mfaMethod(method)
+            .user(user)
+            .context(context)
+            .build();
+        
+        eventManager.fireEvent(event);
     }
-
-    private boolean isValidEmail(String email) {
-        return email != null && email.matches("^[A-Za-z0-9+_.-]+@(.+)$");
+    
+    private void fireVerificationSucceededEvent(AuthenticationFlowContext context, UserModel user, String method) {
+        AuthEvent event = new AuthEvent.Builder()
+            .type(AuthEvent.EventType.MFA_VERIFICATION_SUCCEEDED)
+            .mfaMethod(method)
+            .user(user)
+            .context(context)
+            .build();
+        
+        eventManager.fireEvent(event);
+    }
+    
+    private void fireVerificationFailedEvent(AuthenticationFlowContext context, UserModel user, String method, String reason) {
+        AuthEvent event = new AuthEvent.Builder()
+            .type(AuthEvent.EventType.MFA_VERIFICATION_FAILED)
+            .mfaMethod(method)
+            .user(user)
+            .context(context)
+            .details(reason)
+            .build();
+        
+        eventManager.fireEvent(event);
     }
 
     @Override
@@ -498,14 +357,17 @@ private void proceedWithOTP(AuthenticationFlowContext context, UserModel user) {
 
     @Override
     public boolean configuredFor(KeycloakSession session, RealmModel realm, UserModel user) {
+        // Always return true as we handle unconfigured cases in the flow
         return true;
     }
 
     @Override
     public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
+        // No required actions to set here
     }
 
     @Override
     public void close() {
+        // No resources to close
     }
 }

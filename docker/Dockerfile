@@ -10,10 +10,10 @@ COPY pom.xml .
 # Copy source files
 COPY src ./src
 
-# COPY target/keycloak-mfa-plugin-1.0-SNAPSHOT.jar /app/target/
+COPY target/keycloak-mfa-plugin-1.0-SNAPSHOT.jar /app/target/
 
 # # Build the application
-RUN mvn clean package -DskipTests
+# RUN mvn clean package -DskipTests
 
 # Runtime stage
 FROM quay.io/keycloak/keycloak:26.1.2

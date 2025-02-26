@@ -7,9 +7,16 @@ import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
+import com.example.mfa.event.AuthEventManager;
+import com.example.mfa.event.LoggingEventListener;
+
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Factory for creating CustomMFAAuthenticator instances
+ * Registers authenticator with Keycloak and provides configuration properties
+ */
 public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, ConfigurableAuthenticatorFactory {
     
     public static final String PROVIDER_ID = "custom-mfa-authenticator";
@@ -18,6 +25,9 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
     private static final List<ProviderConfigProperty> configProperties = new ArrayList<>();
     
     static {
+        // Register the logging event listener
+        AuthEventManager.getInstance().addEventListener(new LoggingEventListener());
+        
         // Twilio Configuration
         ProviderConfigProperty twilioAccountSid = new ProviderConfigProperty();
         twilioAccountSid.setName("twilioAccountSid");
@@ -72,6 +82,15 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
         otpEmailSubject.setDefaultValue("Your authentication code");
         otpEmailSubject.setHelpText("Subject line for OTP emails");
         configProperties.add(otpEmailSubject);
+        
+        // OTP configuration
+        ProviderConfigProperty otpExpiration = new ProviderConfigProperty();
+        otpExpiration.setName("otpExpiration");
+        otpExpiration.setLabel("OTP Expiration Time");
+        otpExpiration.setType(ProviderConfigProperty.STRING_TYPE);
+        otpExpiration.setDefaultValue("300"); // 5 minutes in seconds
+        otpExpiration.setHelpText("Time in seconds before OTP expires");
+        configProperties.add(otpExpiration);
     }
 
     @Override
@@ -115,14 +134,17 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
 
     @Override
     public void init(org.keycloak.Config.Scope config) {
+        // Initialize any global settings here
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
+        // Perform any post-initialization logic
     }
 
     @Override
     public void close() {
+        // Clean up resources
     }
 
     @Override
