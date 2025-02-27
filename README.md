@@ -1,6 +1,206 @@
-# Keycloak MFA Plugin - Refactored with Design Patterns
+# Keycloak MFA Plugin
 
-This project is a Keycloak authentication plugin that provides multi-factor authentication (MFA) using various methods including SMS, Email, Telegram, and TOTP. The codebase has been refactored to follow modern design patterns, providing a more extensible, maintainable, and testable architecture.
+This project is a Keycloak authentication plugin that provides multi-factor authentication (MFA) using various methods including SMS, Email, Telegram, and TOTP. The codebase follows modern design patterns, providing an extensible, maintainable, and testable architecture.
+
+## Architecture Overview
+
+```mermaid
+graph TD
+    User((User)) --> KC[Keycloak]
+    KC --> Auth[CustomMFAAuthenticator]
+    
+    Auth --> Factory[MFAProviderFactory]
+    Factory --> Provider{MFA Provider}
+    
+    Provider --> SMS[SMSProvider]
+    Provider --> Email[EmailProvider]
+    Provider --> Telegram[TelegramProvider]
+    Provider --> TOTP[TOTPProvider]
+    
+    SMS --> Twilio[TwilioServiceAdapter]
+    Email --> EmailService[EmailServiceAdapter]
+    Telegram --> TelegramBot[TelegramServiceAdapter]
+    
+    Auth --> EventMgr[AuthEventManager]
+    EventMgr --> Listeners[Event Listeners]
+    
+    subgraph Flow[Authentication Flow]
+        Select[Method Selection] --> Config[Configuration]
+        Config --> Verify[Code Verification]
+        Verify --> Success[Authentication Success]
+    end
+    
+    style Provider fill:#f9f,stroke:#333,stroke-width:2px
+    style Factory fill:#bbf,stroke:#333,stroke-width:2px
+    style Twilio fill:#bfb,stroke:#333,stroke-width:2px
+    style EmailService fill:#bfb,stroke:#333,stroke-width:2px
+    style TelegramBot fill:#bfb,stroke:#333,stroke-width:2px
+    style EventMgr fill:#fbb,stroke:#333,stroke-width:2px
+    style Listeners fill:#fbb,stroke:#333,stroke-width:2px
+```
+
+## Design Patterns Overview
+
+```mermaid
+graph TD
+    subgraph Strategy[Strategy Pattern]
+        StrategyInterface[MFAProvider Interface]
+        StrategyAbstract[AbstractMFAProvider]
+        Strategy1[SMSProvider]
+        Strategy2[EmailProvider]
+        Strategy3[TelegramProvider]
+        Strategy4[TOTPProvider]
+        
+        StrategyInterface --> StrategyAbstract
+        StrategyAbstract --> Strategy1
+        StrategyAbstract --> Strategy2
+        StrategyAbstract --> Strategy3
+        StrategyAbstract --> Strategy4
+    end
+    
+    subgraph Factory[Factory Pattern]
+        FactoryClass[MFAProviderFactory]
+        Client[CustomMFAAuthenticator]
+        Product[MFAProvider]
+        
+        Client --> FactoryClass
+        FactoryClass --> Product
+    end
+    
+    subgraph Adapter[Adapter Pattern]
+        AdapterInterface[ExternalServiceAdapter]
+        Adapter1[TwilioServiceAdapter]
+        Adapter2[EmailServiceAdapter]
+        Adapter3[TelegramServiceAdapter]
+        
+        AdapterInterface --> Adapter1
+        AdapterInterface --> Adapter2
+        AdapterInterface --> Adapter3
+    end
+    
+    subgraph Observer[Observer Pattern]
+        Subject[AuthEventManager]
+        Observer1[LoggingEventListener]
+        ObserverInterface[AuthEventListener]
+        EventClass[AuthEvent]
+        
+        Subject --> ObserverInterface
+        ObserverInterface --> Observer1
+        Subject --> EventClass
+    end
+    
+    subgraph Template[Template Method]
+        TemplateClass[AbstractMFAProvider]
+        ConcreteClass[Concrete Providers]
+        
+        TemplateClass -- "defines flow" --> ConcreteClass
+        ConcreteClass -- "override specific steps" --> TemplateClass
+    end
+    
+    subgraph Singleton[Singleton Pattern]
+        Single1[OTPGenerator]
+        Single2[MFAProviderFactory]
+        Single3[AuthEventManager]
+        Single4[Service Adapters]
+    end
+    
+    subgraph Builder[Builder Pattern]
+        Director[Client Code]
+        Builder1[AuthEvent.Builder]
+        Builder2[MFAConfig.Builder]
+        Builder3[EmailContentBuilder]
+        
+        Director --> Builder1
+        Director --> Builder2
+        Director --> Builder3
+    end
+    
+    style Strategy fill:#f9f,stroke:#333,stroke-width:2px
+    style Factory fill:#bbf,stroke:#333,stroke-width:2px
+    style Adapter fill:#bfb,stroke:#333,stroke-width:2px
+    style Observer fill:#fbb,stroke:#333,stroke-width:2px
+    style Template fill:#ffb,stroke:#333,stroke-width:2px
+    style Singleton fill:#bff,stroke:#333,stroke-width:2px
+    style Builder fill:#fbf,stroke:#333,stroke-width:2px
+```
+
+## Class Diagram
+
+```mermaid
+classDiagram
+    MFAProvider <|.. AbstractMFAProvider
+    AbstractMFAProvider <|-- SMSProvider
+    AbstractMFAProvider <|-- EmailProvider
+    AbstractMFAProvider <|-- TelegramProvider
+    AbstractMFAProvider <|-- TOTPProvider
+    
+    ExternalServiceAdapter <|.. TwilioServiceAdapter
+    ExternalServiceAdapter <|.. EmailServiceAdapter
+    ExternalServiceAdapter <|.. TelegramServiceAdapter
+    
+    SMSProvider --> TwilioServiceAdapter
+    EmailProvider --> EmailServiceAdapter
+    TelegramProvider --> TelegramServiceAdapter
+    
+    CustomMFAAuthenticator --> MFAProviderFactory
+    MFAProviderFactory --> MFAProvider
+    CustomMFAAuthenticator --> AuthEventManager
+    AuthEventManager --> AuthEventListener
+    AuthEventListener <|.. LoggingEventListener
+    
+    class MFAProvider {
+        <<interface>>
+        +isConfiguredFor(user)
+        +sendVerificationCode(context, user)
+        +verifyCode(context, user, code)
+        +configure(context, user, configValue)
+        +getType()
+        +getDisplayName()
+    }
+    
+    class AbstractMFAProvider {
+        <<abstract>>
+        #config: MFAConfig
+        #otpGenerator: OTPGenerator
+        +sendVerificationCode(context, user)
+        +verifyCode(context, user, code)
+        #sendCode(context, user, code)
+    }
+    
+    class ExternalServiceAdapter {
+        <<interface>>
+        +isConfigured()
+        +sendVerificationCode(recipient, code)
+        +verifyCode(recipient, code)
+    }
+    
+    class MFAProviderFactory {
+        -instance: MFAProviderFactory
+        +getInstance()
+        +createProvider(type, config)
+    }
+    
+    class CustomMFAAuthenticator {
+        -providerFactory: MFAProviderFactory
+        -eventManager: AuthEventManager
+        +authenticate(context)
+        +action(context)
+    }
+    
+    class AuthEventManager {
+        -instance: AuthEventManager
+        -listeners: List~AuthEventListener~
+        +addEventListener(listener)
+        +removeEventListener(listener)
+        +fireEvent(event)
+    }
+    
+    class OTPGenerator {
+        -instance: OTPGenerator
+        +generateOTP()
+        +generateOTP(length)
+    }
+```
 
 ## Design Patterns Implemented
 
@@ -20,7 +220,7 @@ This allows each provider to implement method-specific logic while sharing commo
 
 ### 2. Factory Pattern
 
-The Factory Pattern provides an interface for creating objects without specifying their concrete classes.
+The Factory Pattern provides an interface for creating objects without specifying their concrete classes. 
 
 - **Factory**: `MFAProviderFactory`
 
@@ -83,9 +283,9 @@ The Observer Pattern defines a one-to-many dependency between objects so that wh
 
 This allows for logging, metrics, and other cross-cutting concerns without cluttering the core code.
 
-## Key Benefits of the Refactoring
+## Key Benefits
 
-1. **Extensibility**: Adding new MFA methods is now much easier - just implement a new provider.
+1. **Extensibility**: Adding new MFA methods is easy - just implement a new provider.
 2. **Testability**: The modular design makes unit testing much simpler.
 3. **Separation of Concerns**: Each class has a single responsibility.
 4. **Code Reuse**: Common logic is shared through abstract classes and utilities.
@@ -98,10 +298,10 @@ This allows for logging, metrics, and other cross-cutting concerns without clutt
 ```
 com.example.mfa/
 ├── authenticator/
-│   ├── CustomMFAAuthenticator.java       # Main authenticator (refactored)
+│   ├── CustomMFAAuthenticator.java       # Main authenticator
 │   └── CustomMFAAuthenticatorFactory.java
 ├── config/
-│   └── MFAConfig.java                    # Configuration (refactored)
+│   └── MFAConfig.java                    # Configuration
 ├── provider/
 │   ├── MFAProvider.java                  # Interface for all providers
 │   ├── AbstractMFAProvider.java          # Abstract base class
