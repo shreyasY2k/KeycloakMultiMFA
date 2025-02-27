@@ -72,10 +72,19 @@ public class TOTPProvider extends AbstractMFAProvider {
     
     @Override
     public boolean configure(AuthenticationFlowContext context, UserModel user, String configValue) {
-        // TOTP configuration is handled by Keycloak's built-in TOTP configuration flow
-        // We'll just add the required action
+        // Add the required action to configure TOTP
+        logger.info("Adding CONFIGURE_TOTP required action for user: " + user.getUsername());
         user.addRequiredAction(UserModel.RequiredAction.CONFIGURE_TOTP);
+        
+        // We'll return true to indicate we've successfully set up the configuration process
         return true;
+    }
+    
+    /**
+     * Check if user should be redirected to TOTP setup
+     */
+    public boolean shouldSetupTOTP(UserModel user) {
+        return !isConfiguredFor(user);
     }
     
     @Override

@@ -13,6 +13,7 @@ import com.example.mfa.event.AuthEventManager;
 import com.example.mfa.factory.MFAProviderFactory;
 import com.example.mfa.provider.MFAException;
 import com.example.mfa.provider.MFAProvider;
+import com.example.mfa.provider.TOTPProvider;
 import jakarta.ws.rs.core.MultivaluedMap;
 
 /**
@@ -79,6 +80,8 @@ public class CustomMFAAuthenticator implements Authenticator {
                     
                     // Fire event
                     fireVerificationStartedEvent(context, user, method);
+
+                    context.form().setAttribute("method", method);
                     
                     // Send verification code
                     provider.sendVerificationCode(context, user);
@@ -172,7 +175,24 @@ public class CustomMFAAuthenticator implements Authenticator {
         try {
             MFAProvider provider = providerFactory.createProvider(method, context.getAuthenticatorConfig());
             context.getAuthenticationSession().setAuthNote(NOTE_CHOSEN_METHOD, method);
-            
+
+            if ("totp".equals(method)) {
+                TOTPProvider totpProvider = (TOTPProvider) provider;
+                if (totpProvider.shouldSetupTOTP(user)) {
+                    logger.info("TOTP not configured for user " + user.getUsername() + ", adding required action");
+                    
+                    // Add required action and redirect to TOTP setup
+                    user.addRequiredAction(UserModel.RequiredAction.CONFIGURE_TOTP);
+                    
+                    // Fire setup event
+                    fireSetupStartedEvent(context, user, method);
+                    
+                    // Complete this authenticator and forward to required actions
+                    context.success();
+                    return;
+                }
+            }
+
             if (provider.isConfiguredFor(user)) {
                 context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_CODE_VALIDATION);
                 
@@ -180,6 +200,7 @@ public class CustomMFAAuthenticator implements Authenticator {
                 fireVerificationStartedEvent(context, user, method);
                 
                 provider.sendVerificationCode(context, user);
+                context.form().setAttribute("method", method);
                 context.challenge(context.form().createForm(TEMPLATE_CODE));
             } else {
                 context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_METHOD_CONFIG);
@@ -234,6 +255,7 @@ public class CustomMFAAuthenticator implements Authenticator {
                 fireSetupCompletedEvent(context, user, method);
                 
                 context.getAuthenticationSession().setAuthNote(AUTH_STATE, STATE_CODE_VALIDATION);
+                context.form().setAttribute("method", method);
                 provider.sendVerificationCode(context, user);
                 context.challenge(context.form().createForm(TEMPLATE_CODE));
             } else {
@@ -272,11 +294,13 @@ public class CustomMFAAuthenticator implements Authenticator {
                 fireVerificationFailedEvent(context, user, method, "Invalid code");
                 
                 context.form().setError("invalidCode", "Invalid verification code");
+                context.form().setAttribute("method", method);
                 context.challenge(context.form().createForm(TEMPLATE_CODE));
             }
         } catch (Exception e) {
             logger.error("Error during code validation", e);
             context.form().setError("validationError", "Error validating code");
+            context.form().setAttribute("method", method);
             context.challenge(context.form().createForm(TEMPLATE_CODE));
         }
     }

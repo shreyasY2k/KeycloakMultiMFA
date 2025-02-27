@@ -1,5 +1,6 @@
 package com.example.mfa.authenticator;
 
+import org.jboss.logging.Logger;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.authentication.AuthenticatorFactory;
 import org.keycloak.authentication.ConfigurableAuthenticatorFactory;
@@ -9,6 +10,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 import com.example.mfa.event.AuthEventManager;
 import com.example.mfa.event.LoggingEventListener;
+import com.example.mfa.config.MFAConfig;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +21,7 @@ import java.util.List;
  */
 public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, ConfigurableAuthenticatorFactory {
     
+    private static final Logger logger = Logger.getLogger(CustomMFAAuthenticatorFactory.class);
     public static final String PROVIDER_ID = "custom-mfa-authenticator";
     private static final CustomMFAAuthenticator SINGLETON = new CustomMFAAuthenticator();
     
@@ -28,23 +31,25 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
         // Register the logging event listener
         AuthEventManager.getInstance().addEventListener(new LoggingEventListener());
         
-        // Twilio Configuration
+        logger.info("Initializing CustomMFAAuthenticatorFactory configuration properties");
+        
+        // Twilio Configuration - use string constants for key name consistency
         ProviderConfigProperty twilioAccountSid = new ProviderConfigProperty();
-        twilioAccountSid.setName("twilioAccountSid");
+        twilioAccountSid.setName("twilioAccountSid");  // Must match key in service adapter
         twilioAccountSid.setLabel("Twilio Account SID");
         twilioAccountSid.setType(ProviderConfigProperty.STRING_TYPE);
         twilioAccountSid.setHelpText("Your Twilio Account SID");
         configProperties.add(twilioAccountSid);
 
         ProviderConfigProperty twilioAuthToken = new ProviderConfigProperty();
-        twilioAuthToken.setName("twilioAuthToken");
+        twilioAuthToken.setName("twilioAuthToken");  // Must match key in service adapter
         twilioAuthToken.setLabel("Twilio Auth Token");
         twilioAuthToken.setType(ProviderConfigProperty.PASSWORD);
         twilioAuthToken.setHelpText("Your Twilio Auth Token");
         configProperties.add(twilioAuthToken);
 
         ProviderConfigProperty twilioVerifyServiceSid = new ProviderConfigProperty();
-        twilioVerifyServiceSid.setName("twilioVerifyServiceSid");
+        twilioVerifyServiceSid.setName("twilioVerifyServiceSid");  // Must match key in service adapter
         twilioVerifyServiceSid.setLabel("Twilio Verify Service SID");
         twilioVerifyServiceSid.setType(ProviderConfigProperty.STRING_TYPE);
         twilioVerifyServiceSid.setHelpText("Your Twilio Verify Service SID");
@@ -52,7 +57,7 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
 
         // Telegram Configuration
         ProviderConfigProperty telegramBotToken = new ProviderConfigProperty();
-        telegramBotToken.setName("telegramBotToken");
+        telegramBotToken.setName("telegramBotToken");  // Must match key in service adapter
         telegramBotToken.setLabel("Telegram Bot Token");
         telegramBotToken.setType(ProviderConfigProperty.PASSWORD);
         telegramBotToken.setHelpText("Your Telegram Bot Token");
@@ -60,7 +65,7 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
 
         // Email configuration properties
         ProviderConfigProperty useKeycloakSmtp = new ProviderConfigProperty();
-        useKeycloakSmtp.setName("useKeycloakSmtp");
+        useKeycloakSmtp.setName(MFAConfig.USE_KEYCLOAK_SMTP);
         useKeycloakSmtp.setLabel("Use Keycloak SMTP Settings");
         useKeycloakSmtp.setType(ProviderConfigProperty.BOOLEAN_TYPE);
         useKeycloakSmtp.setDefaultValue("true");
@@ -68,7 +73,7 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
         configProperties.add(useKeycloakSmtp);
 
         ProviderConfigProperty emailVerificationRequired = new ProviderConfigProperty();
-        emailVerificationRequired.setName("emailVerificationRequired");
+        emailVerificationRequired.setName(MFAConfig.EMAIL_VERIFICATION_REQUIRED);
         emailVerificationRequired.setLabel("Require Email Verification");
         emailVerificationRequired.setType(ProviderConfigProperty.BOOLEAN_TYPE);
         emailVerificationRequired.setDefaultValue("true");
@@ -76,7 +81,7 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
         configProperties.add(emailVerificationRequired);
 
         ProviderConfigProperty otpEmailSubject = new ProviderConfigProperty();
-        otpEmailSubject.setName("otpEmailSubject");
+        otpEmailSubject.setName(MFAConfig.OTP_EMAIL_SUBJECT);
         otpEmailSubject.setLabel("OTP Email Subject");
         otpEmailSubject.setType(ProviderConfigProperty.STRING_TYPE);
         otpEmailSubject.setDefaultValue("Your authentication code");
@@ -85,12 +90,14 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
         
         // OTP configuration
         ProviderConfigProperty otpExpiration = new ProviderConfigProperty();
-        otpExpiration.setName("otpExpiration");
+        otpExpiration.setName(MFAConfig.OTP_EXPIRATION);
         otpExpiration.setLabel("OTP Expiration Time");
         otpExpiration.setType(ProviderConfigProperty.STRING_TYPE);
-        otpExpiration.setDefaultValue("300"); // 5 minutes in seconds
+        otpExpiration.setDefaultValue(MFAConfig.DEFAULT_OTP_EXPIRATION); // 5 minutes in seconds
         otpExpiration.setHelpText("Time in seconds before OTP expires");
         configProperties.add(otpExpiration);
+        
+        logger.info("Added " + configProperties.size() + " config properties");
     }
 
     @Override
@@ -135,16 +142,19 @@ public class CustomMFAAuthenticatorFactory implements AuthenticatorFactory, Conf
     @Override
     public void init(org.keycloak.Config.Scope config) {
         // Initialize any global settings here
+        logger.info("Initializing CustomMFAAuthenticatorFactory");
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
         // Perform any post-initialization logic
+        logger.info("Post-initializing CustomMFAAuthenticatorFactory");
     }
 
     @Override
     public void close() {
         // Clean up resources
+        logger.info("Closing CustomMFAAuthenticatorFactory");
     }
 
     @Override

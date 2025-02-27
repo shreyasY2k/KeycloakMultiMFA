@@ -1,5 +1,6 @@
 package com.example.mfa.config;
 
+import org.jboss.logging.Logger;
 import org.keycloak.models.AuthenticatorConfigModel;
 import java.util.Collections;
 import java.util.HashMap;
@@ -9,6 +10,8 @@ import java.util.Map;
  * Configuration class for MFA with immutable properties
  */
 public class MFAConfig {
+    private static final Logger logger = Logger.getLogger(MFAConfig.class);
+    
     // Email configuration
     public static final String SMTP_HOST = "smtpHost";
     public static final String SMTP_PORT = "smtpPort";
@@ -40,7 +43,18 @@ public class MFAConfig {
         Map<String, String> configMap = new HashMap<>();
         
         if (configModel != null && configModel.getConfig() != null) {
+            logger.info("Config model found with " + configModel.getConfig().size() + " properties");
             configMap.putAll(configModel.getConfig());
+            
+            // Debug print key Twilio properties
+            logger.info("Twilio Account SID in config: " + 
+                (configModel.getConfig().containsKey(TWILIO_ACCOUNT_SID) ? "present" : "missing"));
+            logger.info("Twilio Auth Token in config: " + 
+                (configModel.getConfig().containsKey(TWILIO_AUTH_TOKEN) ? "present" : "missing"));
+            logger.info("Twilio Verify Service SID in config: " + 
+                (configModel.getConfig().containsKey(TWILIO_VERIFY_SERVICE_SID) ? "present" : "missing"));
+        } else {
+            logger.warn("Config model is null or empty!");
         }
         
         this.config = Collections.unmodifiableMap(configMap);
@@ -115,7 +129,9 @@ public class MFAConfig {
     
     // Twilio getters
     public String getTwilioAccountSid() {
-        return getConfig(TWILIO_ACCOUNT_SID);
+        String sid = getConfig(TWILIO_ACCOUNT_SID);
+        logger.debug("Retrieved Twilio Account SID: " + (sid != null ? "present" : "null"));
+        return sid;
     }
     
     public String getTwilioAuthToken() {
