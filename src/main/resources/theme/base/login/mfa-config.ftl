@@ -26,10 +26,10 @@
                         <input type="text" id="telegramId" name="telegramId" class="${properties.kcInputClass!}"
                                placeholder="${msg('Enter your telegram id')}"
                                value="${(telegramId!'')}"/>
-                        <div class="telegram-instructions" style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+                        <div class="telegram-instructions" style="margin-top: 10px; padding: 10px; border-radius: 4px;">
                             <p><strong>${msg("To get your Telegram Chat ID")}:</strong></p>
                             <ol style="margin-left: 20px;">
-                                <li>Open Telegram and search for our bot: <strong>${msg("telegram.bot.username")}</strong></li>
+                                <li>Open Telegram and search for our bot: <strong>${msg("telegrambotusername")}</strong></li>
                                 <li>Message the bot anything and it will reply with your Chat ID</li>
                                 <li>Copy the Chat ID and paste it here</li>
                             </ol>
