@@ -2,6 +2,84 @@
 
 This project is a Keycloak authentication plugin that provides multi-factor authentication (MFA) using various methods including SMS, Email, Telegram, and TOTP. The codebase follows modern design patterns, providing an extensible, maintainable, and testable architecture.
 
+## Compatibility
+
+- Supports Keycloak version 26.x and above
+- Built with Java 11+
+- Tested with PostgreSQL as the database backend
+
+## Integration Guide
+
+### Building the Plugin
+
+1. Clone the repository
+2. Build using Maven:
+   ```bash
+   mvn clean package
+   ```
+3. The build will produce a JAR file in the `target` directory
+
+### Installation
+
+1. Copy the JAR file to the Keycloak `providers` directory:
+   ```bash
+   cp target/keycloak-mfa-plugin-1.0-SNAPSHOT.jar /path/to/keycloak/providers/
+   ```
+
+2. Restart Keycloak or build a new image if using Docker:
+   ```bash
+   # For standalone Keycloak
+   /path/to/keycloak/bin/kc.sh build
+   /path/to/keycloak/bin/kc.sh start-dev
+   
+   # For Docker-based setup
+   docker-compose up -d --build
+   ```
+
+### Configuration
+
+1. Log in to the Keycloak Admin Console
+2. Go to Authentication → Flows
+3. Duplicate the "Browser" flow or create a new flow
+4. Add the "Custom MFA Authentication" as an execution step
+5. Click the gear icon on the new execution to configure it:
+   - Twilio Account SID, Auth Token, and Verify Service SID for SMS
+   - Telegram Bot Token for Telegram notifications
+   - Email settings (uses Keycloak's email configuration by default)
+   - OTP expiration time
+
+6. Set the flow as "Required" or "Alternative" based on your needs
+7. Bind the new flow to your realm's browser flow
+
+### Docker Deployment
+
+A Docker Compose file is included for easy deployment:
+
+```bash
+# Start the environment
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the environment
+docker-compose down
+```
+
+The Docker setup includes:
+- Keycloak server with the MFA plugin pre-installed
+- PostgreSQL database
+- Proper configuration for all services
+
+### Testing
+
+You can test the MFA functionality by:
+1. Creating a user in the realm
+2. Enabling MFA for the user through the user account
+3. Logging in with the user's credentials
+4. Selecting an MFA method and configuring it if necessary
+5. Verifying the authentication with the selected method
+
 ## Architecture Overview
 
 ```mermaid
@@ -306,3 +384,52 @@ To add a new MFA method:
 3. Update the UI templates if necessary
 
 The main authenticator doesn't need to be modified when adding new methods, as it delegates to the appropriate provider through the factory.
+
+## Requirements
+
+### Twilio (for SMS authentication)
+- Twilio account with Account SID and Auth Token
+- Twilio Verify Service set up with SMS capability
+- Twilio Verify Service SID
+
+### Telegram (for Telegram authentication)
+- Telegram Bot created through BotFather
+- Telegram Bot Token
+- Users will need to message the bot to get their Chat ID
+
+### Email (for Email authentication)
+- Working SMTP configuration in Keycloak
+- Or custom SMTP configuration provided to the plugin
+
+### TOTP (for Authenticator App)
+- Uses Keycloak's built-in TOTP implementation
+- Users will need an authenticator app like Google Authenticator, Microsoft Authenticator, or Authy
+
+## Troubleshooting
+
+### Configuration Issues
+- If MFA methods stay in "development mode" despite configuration:
+  - Check that the exact key names match between the factory and adapters
+  - Verify authentication flow configuration in Keycloak
+  - Enable DEBUG logging for detailed configuration tracing
+
+### TOTP Configuration
+- If users aren't redirected to TOTP setup:
+  - Ensure the CONFIGURE_TOTP required action is enabled in your realm
+  - Check that TOTP is properly set up in the authentication flow
+
+### Email Delivery Issues
+- Verify Keycloak's email configuration is working
+- Test email sending through Keycloak's test feature
+- Check spam folders for MFA verification emails
+
+### Logging
+- Enable DEBUG level logging for `com.example.mfa` package
+- Examine `AuthEvent` logs for authentication flow issues
+- Service adapters log connection and delivery attempts
+
+### Common Errors
+- "Configuration error occurred": Check service credentials
+- "Verification session has expired": Increase OTP timeout
+- "Failed to send verification code": Check service connectivity
+- "Invalid verification code": Ensure clock synchronization for TOTP
