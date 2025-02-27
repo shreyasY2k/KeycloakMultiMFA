@@ -29,14 +29,6 @@ graph TD
         Config --> Verify[Code Verification]
         Verify --> Success[Authentication Success]
     end
-    
-    style Provider fill:#f9f,stroke:#333,stroke-width:2px
-    style Factory fill:#bbf,stroke:#333,stroke-width:2px
-    style Twilio fill:#bfb,stroke:#333,stroke-width:2px
-    style EmailService fill:#bfb,stroke:#333,stroke-width:2px
-    style TelegramBot fill:#bfb,stroke:#333,stroke-width:2px
-    style EventMgr fill:#fbb,stroke:#333,stroke-width:2px
-    style Listeners fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
 ## Design Patterns Overview
@@ -114,14 +106,6 @@ graph TD
         Director --> Builder2
         Director --> Builder3
     end
-    
-    style Strategy fill:#f9f,stroke:#333,stroke-width:2px
-    style Factory fill:#bbf,stroke:#333,stroke-width:2px
-    style Adapter fill:#bfb,stroke:#333,stroke-width:2px
-    style Observer fill:#fbb,stroke:#333,stroke-width:2px
-    style Template fill:#ffb,stroke:#333,stroke-width:2px
-    style Singleton fill:#bff,stroke:#333,stroke-width:2px
-    style Builder fill:#fbf,stroke:#333,stroke-width:2px
 ```
 
 ## Class Diagram
@@ -185,20 +169,6 @@ classDiagram
         -eventManager: AuthEventManager
         +authenticate(context)
         +action(context)
-    }
-    
-    class AuthEventManager {
-        -instance: AuthEventManager
-        -listeners: List~AuthEventListener~
-        +addEventListener(listener)
-        +removeEventListener(listener)
-        +fireEvent(event)
-    }
-    
-    class OTPGenerator {
-        -instance: OTPGenerator
-        +generateOTP()
-        +generateOTP(length)
     }
 ```
 
