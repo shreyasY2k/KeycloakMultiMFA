@@ -6,6 +6,7 @@ target/
 .idea/
 .vscode/
 *.iml
+.m2/
 
 # Git
 .git/
@@ -25,3 +26,9 @@ src/test/
 # Documentation
 *.md
 LICENSE
+
+# Node.js
+node_modules/
+telegram-bot/node_modules/
+telegram-bot/package-lock.json
+telegram-bot/.env

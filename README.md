@@ -1,4 +1,4 @@
-# Keycloak MFA Plugin
+# Keycloak Multi-MFA
 
 This project is a Keycloak authentication plugin that provides multi-factor authentication (MFA) using various methods including SMS, Email, Telegram, and TOTP. The codebase follows modern design patterns, providing an extensible, maintainable, and testable architecture.
 
@@ -36,9 +36,22 @@ This project is a Keycloak authentication plugin that provides multi-factor auth
    docker-compose up -d --build
    ```
 
+### Accessing Keycloak UI
+
+After deploying Keycloak, you can access the administration console:
+
+- **URL**: http://localhost:3220/admin/  
+  (The port may vary based on your `docker-compose.yml` configuration)
+- **Default credentials**:
+  - Username: `admin`
+  - Password: `admin`
+
+For users accessing the regular login page:
+- **URL**: http://localhost:3220/
+
 ### Configuration
 
-1. Log in to the Keycloak Admin Console
+1. Log in to the Keycloak Admin Console at http://localhost:3220/admin/
 2. Go to Authentication → Flows
 3. Duplicate the "Browser" flow or create a new flow
 4. Add the "Custom MFA Authentication" as an execution step
@@ -51,9 +64,53 @@ This project is a Keycloak authentication plugin that provides multi-factor auth
 6. Set the flow as "Required" or "Alternative" based on your needs
 7. Bind the new flow to your realm's browser flow
 
-### Docker Deployment
+## Setting Up the Telegram Bot
 
-A Docker Compose file is included for easy deployment:
+The MFA plugin includes a Telegram bot service that allows users to receive one-time passwords via Telegram.
+
+### Creating a Telegram Bot
+
+1. Open Telegram and search for "BotFather" (@BotFather)
+2. Start a chat with BotFather and send the `/newbot` command
+3. Follow the instructions to create a new bot:
+   - Provide a name for your bot (e.g., "MFA OTP Bot")
+   - Provide a username for your bot (e.g., "mfa_otp_bot")
+4. Once created, BotFather will provide you with a token. This token is required for the bot to function.
+
+Example:
+```
+Use this token to access the HTTP API:
+123456789:ABCDefGhIJKlmnOPQRstUVwxyz
+```
+
+### Configuring the Docker Environment
+
+1. Create a `.env` file in the same directory as your `docker-compose.yml` file
+2. Add your Telegram bot token to the `.env` file:
+```
+TELEGRAM_BOT_TOKEN=123456789:ABCDefGhIJKlmnOPQRstUVwxyz
+```
+
+### Updating the Bot Username in Keycloak
+
+The bot username is configured in the `messages_en.properties` file. The default setting is `@mfa_otp_bot`, but you should update this to match your actual bot username:
+
+1. Open `src/main/resources/theme/base/login/messages/messages_en.properties`
+2. Find the line with `telegrambotusername=` and update it with your bot's username
+3. Rebuild and redeploy the Keycloak service for the changes to take effect
+
+### User Experience with Telegram MFA
+
+When users select Telegram as their MFA method, they will:
+
+1. Be prompted to contact the Telegram bot
+2. The bot will respond with their Chat ID
+3. Users enter this Chat ID in the MFA configuration screen
+4. For future logins, the system will send one-time codes to the user via the Telegram bot
+
+## Docker Deployment
+
+A Docker Compose file is included for easy deployment with support for all services including the Telegram bot:
 
 ```bash
 # Start the environment
@@ -69,16 +126,18 @@ docker-compose down
 The Docker setup includes:
 - Keycloak server with the MFA plugin pre-installed
 - PostgreSQL database
+- Telegram bot service for MFA via Telegram
 - Proper configuration for all services
 
 ### Testing
 
 You can test the MFA functionality by:
-1. Creating a user in the realm
+1. Creating a user in the realm through the Keycloak Admin Console
 2. Enabling MFA for the user through the user account
-3. Logging in with the user's credentials
-4. Selecting an MFA method and configuring it if necessary
-5. Verifying the authentication with the selected method
+3. Navigating to the login page at http://localhost:3220/
+4. Logging in with the user's credentials
+5. Selecting an MFA method and configuring it if necessary
+6. Verifying the authentication with the selected method
 
 ## Architecture Overview
 
@@ -331,6 +390,17 @@ The Observer Pattern defines a one-to-many dependency between objects so that wh
 
 This allows for logging, metrics, and other cross-cutting concerns without cluttering the core code.
 
+## Telegram Bot Structure
+
+The Telegram bot service is organized as follows:
+
+```
+docker/telegram-bot/
+├── Dockerfile           # Container configuration for the bot
+├── package.json         # Node.js dependencies
+└── bot.js               # Bot implementation
+```
+
 ## Key Benefits
 
 1. **Extensibility**: Adding new MFA methods is easy - just implement a new provider.
@@ -423,6 +493,17 @@ The main authenticator doesn't need to be modified when adding new methods, as i
 - Test email sending through Keycloak's test feature
 - Check spam folders for MFA verification emails
 
+### Telegram Bot Issues
+- **Bot doesn't respond**: Check that the `TELEGRAM_BOT_TOKEN` is correctly set in the `.env` file
+- **Connection errors**: Ensure that your server can reach the Telegram API (api.telegram.org)
+- **Users can't find the bot**: Verify that the username in `messages_en.properties` matches the actual bot username
+
+### Keycloak UI Access Issues
+- If you can't access the Keycloak UI at http://localhost:3220/:
+  - Verify that the Keycloak container is running (`docker ps`)
+  - Check container logs for startup errors (`docker logs keycloak`)
+  - Confirm port mapping in your docker-compose.yml matches the URL you're trying to access
+
 ### Logging
 - Enable DEBUG level logging for `com.example.mfa` package
 - Examine `AuthEvent` logs for authentication flow issues
@@ -433,3 +514,11 @@ The main authenticator doesn't need to be modified when adding new methods, as i
 - "Verification session has expired": Increase OTP timeout
 - "Failed to send verification code": Check service connectivity
 - "Invalid verification code": Ensure clock synchronization for TOTP
+
+## Security Considerations
+
+- The Telegram bot token and Twilio credentials are sensitive. Protect them as you would any API key.
+- In production environments, consider using a secrets management solution rather than environment variables in a `.env` file.
+- The Telegram bot is public and can be messaged by anyone. It only returns Chat IDs and does not expose any sensitive information.
+- OTP codes expire after a configurable timeout period (default 5 minutes)
+- Failed verification attempts are limited to prevent brute force attacks
