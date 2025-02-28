@@ -22,16 +22,17 @@ This project is a Keycloak authentication plugin that provides multi-factor auth
 ### Installation
 
 1. Copy the JAR file to the Keycloak `providers` directory:
+
    ```bash
    cp target/keycloak-mfa-plugin-1.0-SNAPSHOT.jar /path/to/keycloak/providers/
    ```
-
 2. Restart Keycloak or build a new image if using Docker:
+
    ```bash
    # For standalone Keycloak
    /path/to/keycloak/bin/kc.sh build
    /path/to/keycloak/bin/kc.sh start-dev
-   
+
    # For Docker-based setup
    docker-compose up -d --build
    ```
@@ -40,13 +41,13 @@ This project is a Keycloak authentication plugin that provides multi-factor auth
 
 After deploying Keycloak, you can access the administration console:
 
-- **URL**: http://localhost:3220/admin/  
-  (The port may vary based on your `docker-compose.yml` configuration)
+- **URL**: http://localhost:3220/admin/(The port may vary based on your `docker-compose.yml` configuration)
 - **Default credentials**:
   - Username: `admin`
   - Password: `admin`
 
 For users accessing the regular login page:
+
 - **URL**: http://localhost:3220/
 
 ### Configuration
@@ -56,11 +57,11 @@ For users accessing the regular login page:
 3. Duplicate the "Browser" flow or create a new flow
 4. Add the "Custom MFA Authentication" as an execution step
 5. Click the gear icon on the new execution to configure it:
+
    - Twilio Account SID, Auth Token, and Verify Service SID for SMS
    - Telegram Bot Token for Telegram notifications
    - Email settings (uses Keycloak's email configuration by default)
    - OTP expiration time
-
 6. Set the flow as "Required" or "Alternative" based on your needs
 7. Bind the new flow to your realm's browser flow
 
@@ -78,6 +79,7 @@ The MFA plugin includes a Telegram bot service that allows users to receive one-
 4. Once created, BotFather will provide you with a token. This token is required for the bot to function.
 
 Example:
+
 ```
 Use this token to access the HTTP API:
 123456789:ABCDefGhIJKlmnOPQRstUVwxyz
@@ -87,6 +89,7 @@ Use this token to access the HTTP API:
 
 1. Create a `.env` file in the same directory as your `docker-compose.yml` file
 2. Add your Telegram bot token to the `.env` file:
+
 ```
 TELEGRAM_BOT_TOKEN=123456789:ABCDefGhIJKlmnOPQRstUVwxyz
 ```
@@ -124,6 +127,7 @@ docker-compose down
 ```
 
 The Docker setup includes:
+
 - Keycloak server with the MFA plugin pre-installed
 - PostgreSQL database
 - Telegram bot service for MFA via Telegram
@@ -132,6 +136,7 @@ The Docker setup includes:
 ### Testing
 
 You can test the MFA functionality by:
+
 1. Creating a user in the realm through the Keycloak Admin Console
 2. Enabling MFA for the user through the user account
 3. Navigating to the login page at http://localhost:3220/
@@ -145,22 +150,22 @@ You can test the MFA functionality by:
 graph TD
     User((User)) --> KC[Keycloak]
     KC --> Auth[CustomMFAAuthenticator]
-    
+  
     Auth --> Factory[MFAProviderFactory]
     Factory --> Provider{MFA Provider}
-    
+  
     Provider --> SMS[SMSProvider]
     Provider --> Email[EmailProvider]
     Provider --> Telegram[TelegramProvider]
     Provider --> TOTP[TOTPProvider]
-    
+  
     SMS --> Twilio[TwilioServiceAdapter]
     Email --> EmailService[EmailServiceAdapter]
     Telegram --> TelegramBot[TelegramServiceAdapter]
-    
+  
     Auth --> EventMgr[AuthEventManager]
     EventMgr --> Listeners[Event Listeners]
-    
+  
     subgraph Flow[Authentication Flow]
         Select[Method Selection] --> Config[Configuration]
         Config --> Verify[Code Verification]
@@ -179,69 +184,64 @@ graph TD
         Strategy2[EmailProvider]
         Strategy3[TelegramProvider]
         Strategy4[TOTPProvider]
-        
+      
         StrategyInterface --> StrategyAbstract
         StrategyAbstract --> Strategy1
         StrategyAbstract --> Strategy2
         StrategyAbstract --> Strategy3
         StrategyAbstract --> Strategy4
     end
-    
+  
     subgraph Factory[Factory Pattern]
         FactoryClass[MFAProviderFactory]
         Client[CustomMFAAuthenticator]
         Product[MFAProvider]
-        
+      
         Client --> FactoryClass
         FactoryClass --> Product
     end
-    
+```
+
+```mermaid
+graph TD
     subgraph Adapter[Adapter Pattern]
         AdapterInterface[ExternalServiceAdapter]
         Adapter1[TwilioServiceAdapter]
         Adapter2[EmailServiceAdapter]
         Adapter3[TelegramServiceAdapter]
-        
+      
         AdapterInterface --> Adapter1
         AdapterInterface --> Adapter2
         AdapterInterface --> Adapter3
     end
-    
+  
     subgraph Observer[Observer Pattern]
         Subject[AuthEventManager]
         Observer1[LoggingEventListener]
         ObserverInterface[AuthEventListener]
         EventClass[AuthEvent]
-        
+      
         Subject --> ObserverInterface
         ObserverInterface --> Observer1
         Subject --> EventClass
     end
-    
+```
+
+```mermaid
+graph TD
     subgraph Template[Template Method]
         TemplateClass[AbstractMFAProvider]
         ConcreteClass[Concrete Providers]
-        
+      
         TemplateClass -- "defines flow" --> ConcreteClass
         ConcreteClass -- "override specific steps" --> TemplateClass
     end
-    
+  
     subgraph Singleton[Singleton Pattern]
         Single1[OTPGenerator]
         Single2[MFAProviderFactory]
         Single3[AuthEventManager]
         Single4[Service Adapters]
-    end
-    
-    subgraph Builder[Builder Pattern]
-        Director[Client Code]
-        Builder1[AuthEvent.Builder]
-        Builder2[MFAConfig.Builder]
-        Builder3[EmailContentBuilder]
-        
-        Director --> Builder1
-        Director --> Builder2
-        Director --> Builder3
     end
 ```
 
@@ -254,21 +254,21 @@ classDiagram
     AbstractMFAProvider <|-- EmailProvider
     AbstractMFAProvider <|-- TelegramProvider
     AbstractMFAProvider <|-- TOTPProvider
-    
+  
     ExternalServiceAdapter <|.. TwilioServiceAdapter
     ExternalServiceAdapter <|.. EmailServiceAdapter
     ExternalServiceAdapter <|.. TelegramServiceAdapter
-    
+  
     SMSProvider --> TwilioServiceAdapter
     EmailProvider --> EmailServiceAdapter
     TelegramProvider --> TelegramServiceAdapter
-    
+  
     CustomMFAAuthenticator --> MFAProviderFactory
     MFAProviderFactory --> MFAProvider
     CustomMFAAuthenticator --> AuthEventManager
     AuthEventManager --> AuthEventListener
     AuthEventListener <|.. LoggingEventListener
-    
+  
     class MFAProvider {
         <<interface>>
         +isConfiguredFor(user)
@@ -278,7 +278,7 @@ classDiagram
         +getType()
         +getDisplayName()
     }
-    
+  
     class AbstractMFAProvider {
         <<abstract>>
         #config: MFAConfig
@@ -287,20 +287,20 @@ classDiagram
         +verifyCode(context, user, code)
         #sendCode(context, user, code)
     }
-    
+  
     class ExternalServiceAdapter {
         <<interface>>
         +isConfigured()
         +sendVerificationCode(recipient, code)
         +verifyCode(recipient, code)
     }
-    
+  
     class MFAProviderFactory {
         -instance: MFAProviderFactory
         +getInstance()
         +createProvider(type, config)
     }
-    
+  
     class CustomMFAAuthenticator {
         -providerFactory: MFAProviderFactory
         -eventManager: AuthEventManager
@@ -327,7 +327,7 @@ This allows each provider to implement method-specific logic while sharing commo
 
 ### 2. Factory Pattern
 
-The Factory Pattern provides an interface for creating objects without specifying their concrete classes. 
+The Factory Pattern provides an interface for creating objects without specifying their concrete classes.
 
 - **Factory**: `MFAProviderFactory`
 
@@ -356,18 +356,7 @@ The Singleton Pattern ensures a class has only one instance and provides a globa
 
 This prevents unnecessary creation of objects that should be shared.
 
-### 5. Builder Pattern
-
-The Builder Pattern separates the construction of a complex object from its representation.
-
-- **Builders**:
-  - `AuthEvent.Builder`
-  - `MFAConfig.Builder`
-  - `EmailServiceAdapter.EmailContentBuilder`
-
-This makes object creation clearer and provides a fluent API.
-
-### 6. Adapter Pattern
+### 5.Adapter Pattern
 
 The Adapter Pattern converts the interface of a class into another interface clients expect.
 
@@ -379,7 +368,7 @@ The Adapter Pattern converts the interface of a class into another interface cli
 
 This provides a consistent interface for working with external services.
 
-### 7. Observer Pattern
+### 6. Observer Pattern
 
 The Observer Pattern defines a one-to-many dependency between objects so that when one object changes state, all its dependents are notified.
 
@@ -458,58 +447,69 @@ The main authenticator doesn't need to be modified when adding new methods, as i
 ## Requirements
 
 ### Twilio (for SMS authentication)
+
 - Twilio account with Account SID and Auth Token
 - Twilio Verify Service set up with SMS capability
 - Twilio Verify Service SID
 
 ### Telegram (for Telegram authentication)
+
 - Telegram Bot created through BotFather
 - Telegram Bot Token
 - Users will need to message the bot to get their Chat ID
 
 ### Email (for Email authentication)
+
 - Working SMTP configuration in Keycloak
 - Or custom SMTP configuration provided to the plugin
 
 ### TOTP (for Authenticator App)
+
 - Uses Keycloak's built-in TOTP implementation
 - Users will need an authenticator app like Google Authenticator, Microsoft Authenticator, or Authy
 
 ## Troubleshooting
 
 ### Configuration Issues
+
 - If MFA methods stay in "development mode" despite configuration:
   - Check that the exact key names match between the factory and adapters
   - Verify authentication flow configuration in Keycloak
   - Enable DEBUG logging for detailed configuration tracing
 
 ### TOTP Configuration
+
 - If users aren't redirected to TOTP setup:
   - Ensure the CONFIGURE_TOTP required action is enabled in your realm
   - Check that TOTP is properly set up in the authentication flow
 
 ### Email Delivery Issues
+
 - Verify Keycloak's email configuration is working
 - Test email sending through Keycloak's test feature
 - Check spam folders for MFA verification emails
 
 ### Telegram Bot Issues
+
 - **Bot doesn't respond**: Check that the `TELEGRAM_BOT_TOKEN` is correctly set in the `.env` file
 - **Connection errors**: Ensure that your server can reach the Telegram API (api.telegram.org)
 - **Users can't find the bot**: Verify that the username in `messages_en.properties` matches the actual bot username
 
 ### Keycloak UI Access Issues
+
 - If you can't access the Keycloak UI at http://localhost:3220/:
   - Verify that the Keycloak container is running (`docker ps`)
   - Check container logs for startup errors (`docker logs keycloak`)
   - Confirm port mapping in your docker-compose.yml matches the URL you're trying to access
 
 ### Logging
+
 - Enable DEBUG level logging for `com.example.mfa` package
 - Examine `AuthEvent` logs for authentication flow issues
 - Service adapters log connection and delivery attempts
 
 ### Common Errors
+
 - "Configuration error occurred": Check service credentials
 - "Verification session has expired": Increase OTP timeout
 - "Failed to send verification code": Check service connectivity
