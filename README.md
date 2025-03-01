@@ -34,7 +34,7 @@ This project is a Keycloak authentication plugin that provides multi-factor auth
    /path/to/keycloak/bin/kc.sh start-dev
 
    # For Docker-based setup
-   docker-compose up -d --build
+   docker-compose -f docker/docker-compose.yml up --build
    ```
 
 ### Accessing Keycloak UI
@@ -87,16 +87,13 @@ Use this token to access the HTTP API:
 
 ### Configuring the Docker Environment
 
-1. Create a `.env` file in the same directory as your `docker-compose.yml` file
-2. Add your Telegram bot token to the `.env` file:
-
 ```
-TELEGRAM_BOT_TOKEN=123456789:ABCDefGhIJKlmnOPQRstUVwxyz
+export TELEGRAM_BOT_TOKEN=123456789:ABCDefGhIJKlmnOPQRstUVwxyz
 ```
 
 ### Updating the Bot Username in Keycloak
 
-The bot username is configured in the `messages_en.properties` file. The default setting is `@mfa_otp_bot`, but you should update this to match your actual bot username:
+The bot username is configured in the `messages_en.properties` file. The default setting is `@KeycloakMultiMFA`, but you should update this to match your actual bot username:
 
 1. Open `src/main/resources/theme/base/login/messages/messages_en.properties`
 2. Find the line with `telegrambotusername=` and update it with your bot's username
@@ -117,7 +114,7 @@ A Docker Compose file is included for easy deployment with support for all servi
 
 ```bash
 # Start the environment
-docker-compose up -d
+docker-compose -f docker/docker-compose.yml up --build
 
 # View logs
 docker-compose logs -f
@@ -184,7 +181,7 @@ graph TD
         Strategy2[EmailProvider]
         Strategy3[TelegramProvider]
         Strategy4[TOTPProvider]
-      
+    
         StrategyInterface --> StrategyAbstract
         StrategyAbstract --> Strategy1
         StrategyAbstract --> Strategy2
@@ -196,7 +193,7 @@ graph TD
         FactoryClass[MFAProviderFactory]
         Client[CustomMFAAuthenticator]
         Product[MFAProvider]
-      
+    
         Client --> FactoryClass
         FactoryClass --> Product
     end
@@ -209,7 +206,7 @@ graph TD
         Adapter1[TwilioServiceAdapter]
         Adapter2[EmailServiceAdapter]
         Adapter3[TelegramServiceAdapter]
-      
+    
         AdapterInterface --> Adapter1
         AdapterInterface --> Adapter2
         AdapterInterface --> Adapter3
@@ -220,7 +217,7 @@ graph TD
         Observer1[LoggingEventListener]
         ObserverInterface[AuthEventListener]
         EventClass[AuthEvent]
-      
+    
         Subject --> ObserverInterface
         ObserverInterface --> Observer1
         Subject --> EventClass
@@ -232,7 +229,7 @@ graph TD
     subgraph Template[Template Method]
         TemplateClass[AbstractMFAProvider]
         ConcreteClass[Concrete Providers]
-      
+    
         TemplateClass -- "defines flow" --> ConcreteClass
         ConcreteClass -- "override specific steps" --> TemplateClass
     end
