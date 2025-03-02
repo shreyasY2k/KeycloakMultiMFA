@@ -39,20 +39,16 @@ This project is a Keycloak authentication plugin that provides multi-factor auth
 
 ### Accessing Keycloak UI
 
-After deploying Keycloak, you can access the administration console:
+After deploying Keycloak, you can access the login console:
 
-- **URL**: http://localhost:3220/admin/(The port may vary based on your `docker-compose.yml` configuration)
+- **URL**: http://localhost:3220/auth/ (The port may vary based on your `docker-compose.yml` configuration)
 - **Default credentials**:
   - Username: `admin`
   - Password: `admin`
 
-For users accessing the regular login page:
-
-- **URL**: http://localhost:3220/
-
 ### Configuration
 
-1. Log in to the Keycloak Admin Console at http://localhost:3220/admin/
+1. Log in to the Keycloak at http://localhost:3220/auth/
 2. Go to Authentication → Flows
 3. Duplicate the "Browser" flow or create a new flow
 4. Add the "Custom MFA Authentication" as an execution step
@@ -181,7 +177,7 @@ graph TD
         Strategy2[EmailProvider]
         Strategy3[TelegramProvider]
         Strategy4[TOTPProvider]
-    
+  
         StrategyInterface --> StrategyAbstract
         StrategyAbstract --> Strategy1
         StrategyAbstract --> Strategy2
@@ -193,7 +189,7 @@ graph TD
         FactoryClass[MFAProviderFactory]
         Client[CustomMFAAuthenticator]
         Product[MFAProvider]
-    
+  
         Client --> FactoryClass
         FactoryClass --> Product
     end
@@ -206,7 +202,7 @@ graph TD
         Adapter1[TwilioServiceAdapter]
         Adapter2[EmailServiceAdapter]
         Adapter3[TelegramServiceAdapter]
-    
+  
         AdapterInterface --> Adapter1
         AdapterInterface --> Adapter2
         AdapterInterface --> Adapter3
@@ -217,7 +213,7 @@ graph TD
         Observer1[LoggingEventListener]
         ObserverInterface[AuthEventListener]
         EventClass[AuthEvent]
-    
+  
         Subject --> ObserverInterface
         ObserverInterface --> Observer1
         Subject --> EventClass
@@ -229,7 +225,7 @@ graph TD
     subgraph Template[Template Method]
         TemplateClass[AbstractMFAProvider]
         ConcreteClass[Concrete Providers]
-    
+  
         TemplateClass -- "defines flow" --> ConcreteClass
         ConcreteClass -- "override specific steps" --> TemplateClass
     end

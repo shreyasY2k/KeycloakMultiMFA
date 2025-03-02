@@ -16,13 +16,28 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
+    <!-- Add GitHub repository -->
     <repositories>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/shreyasY2k/KeycloakMultiMFA</url>
+        </repository>
         <repository>
             <id>twilio</id>
             <name>Twilio Maven Repository</name>
             <url>https://repository.twilio.com/releases</url>
         </repository>
     </repositories>
+
+    <!-- Distribution Management for GitHub Packages -->
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/shreyasY2k/KeycloakMultiMFA</url>
+        </repository>
+    </distributionManagement>
 
     <!-- Control Jackson version - use a version compatible with Java 11 -->
     <dependencyManagement>
@@ -234,6 +249,15 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <!-- Add deploy plugin configuration -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.2</version>
+                <configuration>
+                    <altDeploymentRepository>github::default::https://maven.pkg.github.com/shreyasY2k/KeycloakMultiMFA</altDeploymentRepository>
+                </configuration>
             </plugin>
         </plugins>
     </build>

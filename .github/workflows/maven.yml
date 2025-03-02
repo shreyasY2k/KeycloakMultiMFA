@@ -26,7 +26,6 @@ jobs:
     - name: Build with Maven
       run: mvn -B package --file pom.xml
 
-  # Add a new job to publish the package to GitHub Packages
   publish:
     needs: build
     runs-on: ubuntu-latest
@@ -38,16 +37,24 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: maven
           server-id: github
           settings-path: ${{ github.workspace }}
 
-      - name: Configure Maven for GitHub Packages
+      - name: Configure Maven settings.xml
         run: |
           mkdir -p ~/.m2
           echo "<settings><servers><server><id>github</id><username>${{ github.actor }}</username><password>${{ secrets.TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
-
-      - name: Publish package
-        run: mvn -B deploy
+        
+      - name: Debug - Show settings.xml
+        run: cat ~/.m2/settings.xml
+        
+      - name: Debug - Show environment
+        run: |
+          echo "GitHub Actor: ${{ github.actor }}"
+          echo "GitHub Repository: ${{ github.repository }}"
+          echo "Working Directory: $(pwd)"
+          
+      - name: Deploy with Maven
+        run: mvn deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
